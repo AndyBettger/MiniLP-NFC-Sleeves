@@ -274,6 +274,21 @@ output/
 
 This avoids committing generated PDFs or copyrighted album artwork.
 
+## GUI
+
+A basic Tkinter GUI is available:
+
+```powershell
+python .\src\mini_lp_sleeve_gui.py
+```
+The GUI can:
+
+* list valid album folders
+* select one or more albums 
+* choose open or sealed pocket mode 
+* choose an output PDF path 
+* generate the PDF using the command-line generator
+
 ## Roadmap
 
 Planned future features:
