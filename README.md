@@ -6,6 +6,8 @@ This project was created as a companion to a Plexamp NFC setup, where physical m
 
 The current version generates A4 PDF sheets containing mini album sleeves that can be printed, cut, folded, and glued into small pockets.
 
+Initial physical tests worked well on 160gsm card. Plain printer paper is useful for test fitting but feels flimsy. Sealed sleeves are recommended for NFC cards because they hold the card more securely.
+
 ## Current Status
 
 This is an early working prototype.
