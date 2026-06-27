@@ -21,7 +21,7 @@ class SleeveConfig:
     cover_size_mm: float = 60.0
     flap_size_mm: float = 8.0
     seal_flap_size_mm: float = 6.0
-    guide_margin_mm: float = 3.0
+    guide_margin_mm: float = 5.0
     dpi: int = 300
     pocket_mode: str = "open"  # "open" or "sealed"
     front_mode: str = "crop"  # "crop" or "fit"
@@ -128,6 +128,59 @@ def conservative_auto_trim(
     return image.crop(bbox)
 
 
+def make_side_flap_mask(width: int, height: int, inset: int) -> Image.Image:
+    """
+    Create a mask for a side sealing flap.
+
+    The flap is full-height where it joins the front cover, with angled
+    top/bottom corners on the outer edge.
+    """
+    mask = Image.new("L", (width, height), 0)
+    draw = ImageDraw.Draw(mask)
+
+    polygon = [
+        (0, 0),
+        (width, inset),
+        (width, height - inset),
+        (0, height),
+    ]
+
+    draw.polygon(polygon, fill=255)
+    return mask
+
+
+def make_flap_mask(width: int, height: int, inset: int, position: str) -> Image.Image:
+    """
+    Create a mask for a trapezium flap.
+
+    position:
+      - "top": narrower outer edge at the top
+      - "bottom": narrower outer edge at the bottom
+    """
+    mask = Image.new("L", (width, height), 0)
+    draw = ImageDraw.Draw(mask)
+
+    if position == "top":
+        polygon = [
+            (inset, 0),
+            (width - inset, 0),
+            (width, height),
+            (0, height),
+        ]
+    elif position == "bottom":
+        polygon = [
+            (0, 0),
+            (width, 0),
+            (width - inset, height),
+            (inset, height),
+        ]
+    else:
+        raise ValueError(f"Unknown flap mask position: {position}")
+
+    draw.polygon(polygon, fill=255)
+    return mask
+
+
 def prepare_square_artwork(
     image_path: Path,
     target_px: int,
@@ -222,37 +275,7 @@ def draw_dashed_line(
         draw.line((sx, sy, ex, ey), fill=fill, width=width)
 
 
-def draw_cut_outline(
-    draw: ImageDraw.ImageDraw,
-    origin_x: int,
-    origin_y: int,
-    cover_px: int,
-    flap_px: int,
-    seal_px: int,
-    line_px: int,
-) -> None:
-    total_width = cover_px * 2 + seal_px
-    total_height = cover_px + flap_px * 2
-
-    x = origin_x
-    y = origin_y
-
-    points = [
-        (x, y),
-        (x + cover_px, y),
-        (x + cover_px, y + flap_px),
-        (x + total_width, y + flap_px),
-        (x + total_width, y + flap_px + cover_px),
-        (x + cover_px, y + flap_px + cover_px),
-        (x + cover_px, y + total_height),
-        (x, y + total_height),
-        (x, y),
-    ]
-
-    draw.line(points, fill=(0, 0, 0), width=line_px, joint="curve")
-
-
-def draw_external_fold_guides(
+def draw_template_guides(
     draw: ImageDraw.ImageDraw,
     origin_x: int,
     origin_y: int,
@@ -263,88 +286,191 @@ def draw_external_fold_guides(
     dpi: int,
 ) -> None:
     """
-    Draw fold guides outside the artwork/template area.
+    Draw solid cut guides and dashed fold guides to match the mini-LP template.
 
-    This avoids printing dotted lines across the album artwork itself.
+    Rules:
+    - Solid marks indicate true cut edges.
+    - Dashed marks indicate folds.
+    - Where a location could be interpreted as both, prefer the fold mark.
     """
+    cut_colour = (0, 0, 0)
     fold_colour = (120, 120, 120)
+
+    mark_len_px = mm_to_px(4.0, dpi)
+    mark_gap_px = mm_to_px(0.8, dpi)
     dash_px = mm_to_px(1.5, dpi)
     gap_px = mm_to_px(1.0, dpi)
-    guide_len_px = mm_to_px(4.0, dpi)
 
     x = origin_x
     y = origin_y
 
+    inset = flap_px
     panel_top = y + flap_px
-    panel_bottom = y + flap_px + cover_px
+    panel_bottom = panel_top + cover_px
+    total_width = cover_px * 2 + seal_px
+    total_height = cover_px + flap_px * 2
 
-    back_front_fold_x = x + cover_px
+    back_left = x
+    back_right = x + cover_px
+    front_left = x + cover_px
+    front_right = x + total_width
+
+    seal_inset = min(flap_px, cover_px // 4)
     seal_fold_x = x + cover_px * 2
 
-    # Fold between back and front covers: short marks above and below the panels.
-    draw_dashed_line(
-        draw,
-        (back_front_fold_x, panel_top - guide_len_px),
-        (back_front_fold_x, panel_top),
-        fold_colour,
-        line_px,
-        dash_px,
-        gap_px,
-    )
-    draw_dashed_line(
-        draw,
-        (back_front_fold_x, panel_bottom),
-        (back_front_fold_x, panel_bottom + guide_len_px),
-        fold_colour,
-        line_px,
-        dash_px,
-        gap_px,
+    # ---------------------------------------------------------------
+    # Solid cut edges for the trapezium flaps
+    # ---------------------------------------------------------------
+
+    draw.line(
+        [
+            (back_left, panel_top),
+            (back_left + inset, y),
+            (back_right - inset, y),
+            (back_right, panel_top),
+        ],
+        fill=cut_colour,
+        width=line_px,
     )
 
-    # Top/bottom glue flap fold marks.
-    # These are only on the back-cover side, so place guide ticks outside the left edge.
-    top_flap_fold_y = y + flap_px
-    bottom_flap_fold_y = y + flap_px + cover_px
-
-    draw_dashed_line(
-        draw,
-        (x - guide_len_px, top_flap_fold_y),
-        (x, top_flap_fold_y),
-        fold_colour,
-        line_px,
-        dash_px,
-        gap_px,
-    )
-    draw_dashed_line(
-        draw,
-        (x - guide_len_px, bottom_flap_fold_y),
-        (x, bottom_flap_fold_y),
-        fold_colour,
-        line_px,
-        dash_px,
-        gap_px,
+    draw.line(
+        [
+            (back_left, panel_bottom),
+            (back_left + inset, y + total_height),
+            (back_right - inset, y + total_height),
+            (back_right, panel_bottom),
+        ],
+        fill=cut_colour,
+        width=line_px,
     )
 
-    # Optional sealed-pocket flap fold.
+    # ---------------------------------------------------------------
+    # External solid cut ticks
+    # ---------------------------------------------------------------
+
+    def hmark_right(cx: int, cy: int) -> None:
+        draw.line(
+            (
+                cx + mark_gap_px,
+                cy,
+                cx + mark_gap_px + mark_len_px,
+                cy,
+            ),
+            fill=cut_colour,
+            width=line_px,
+        )
+
+    def vmark_up(cx: int, cy: int) -> None:
+        draw.line(
+            (
+                cx,
+                cy - mark_gap_px - mark_len_px,
+                cx,
+                cy - mark_gap_px,
+            ),
+            fill=cut_colour,
+            width=line_px,
+        )
+
+    def vmark_down(cx: int, cy: int) -> None:
+        draw.line(
+            (
+                cx,
+                cy + mark_gap_px,
+                cx,
+                cy + mark_gap_px + mark_len_px,
+            ),
+            fill=cut_colour,
+            width=line_px,
+        )
+
+    # Left-hand cut edge of the back cover body.
+    # Only vertical cut ticks are used here, because horizontal cut ticks
+    # would visually clash with the top/bottom flap fold marks.
+    vmark_up(back_left, panel_top)
+    vmark_down(back_left, panel_bottom)
+
     if seal_px > 0:
+        # Sealed mode: draw the trapezium seal flap cut edge.
+        # The front-cover side is a fold, so avoid vertical solid cut ticks there.
+        seal_outer_top = panel_top + seal_inset
+        seal_outer_bottom = panel_bottom - seal_inset
+
+        draw.line(
+            [
+                (seal_fold_x, panel_top),
+                (front_right, seal_outer_top),
+                (front_right, seal_outer_bottom),
+                (seal_fold_x, panel_bottom),
+            ],
+            fill=cut_colour,
+            width=line_px,
+        )
+
+        # These are the front-cover top/bottom edge cut marks.
+        # Horizontal only, so they do not make the seal flap fold look like a cut.
+        hmark_right(seal_fold_x, panel_top)
+        hmark_right(seal_fold_x, panel_bottom)
+
+    else:
+        # Open mode: right-hand open edge of the front cover.
+        # This is a true cut edge, so show the full L-style external marks.
+        hmark_right(front_right, panel_top)
+        vmark_up(front_right, panel_top)
+
+        hmark_right(front_right, panel_bottom)
+        vmark_down(front_right, panel_bottom)
+
+    # ---------------------------------------------------------------
+    # External dashed fold ticks
+    # ---------------------------------------------------------------
+
+    def dashed_hmark_left(cx: int, cy: int) -> None:
         draw_dashed_line(
             draw,
-            (seal_fold_x, panel_top - guide_len_px),
-            (seal_fold_x, panel_top),
+            (cx - mark_gap_px - mark_len_px, cy),
+            (cx - mark_gap_px, cy),
             fold_colour,
             line_px,
             dash_px,
             gap_px,
         )
+
+    def dashed_vmark_up(cx: int, cy: int) -> None:
         draw_dashed_line(
             draw,
-            (seal_fold_x, panel_bottom),
-            (seal_fold_x, panel_bottom + guide_len_px),
+            (cx, cy - mark_gap_px - mark_len_px),
+            (cx, cy - mark_gap_px),
             fold_colour,
             line_px,
             dash_px,
             gap_px,
         )
+
+    def dashed_vmark_down(cx: int, cy: int) -> None:
+        draw_dashed_line(
+            draw,
+            (cx, cy + mark_gap_px),
+            (cx, cy + mark_gap_px + mark_len_px),
+            fold_colour,
+            line_px,
+            dash_px,
+            gap_px,
+        )
+
+    # Fold between back and front covers.
+    dashed_vmark_up(front_left, panel_top)
+    dashed_vmark_down(front_left, panel_bottom)
+
+    # Top and bottom flap folds.
+    # These replace the previous cut ticks on the left side of the back cover.
+    dashed_hmark_left(back_left, panel_top)
+    dashed_hmark_left(back_left, panel_bottom)
+
+    # Optional seal flap fold.
+    if seal_px > 0:
+        dashed_vmark_up(seal_fold_x, panel_top)
+        dashed_vmark_down(seal_fold_x, panel_bottom)
 
 
 def draw_calibration_marks(pdf: canvas.Canvas) -> None:
@@ -423,54 +549,50 @@ def create_sleeve_image(album: AlbumArtwork, config: SleeveConfig) -> Image.Imag
 
     sleeve = Image.new("RGB", (total_width, total_height), "white")
 
-    # Back cover panel.
     back_x = origin_x
     panel_y = origin_y + flap_px
+
+    # Back panel
     sleeve.paste(back, (back_x, panel_y))
 
-    # Back-cover glue flaps use edge-extension from the back cover.
+    # Trapezium top/bottom flaps using edge-extension from the back cover
     strip_height = max(1, cover_px // 40)
-
     top_strip = back.crop((0, 0, cover_px, strip_height))
     bottom_strip = back.crop((0, cover_px - strip_height, cover_px, cover_px))
 
-    sleeve.paste(
-        resize_strip(top_strip, (cover_px, flap_px)),
-        (origin_x, origin_y),
-    )
-    sleeve.paste(
-        resize_strip(bottom_strip, (cover_px, flap_px)),
-        (origin_x, origin_y + flap_px + cover_px),
-    )
+    top_flap = resize_strip(top_strip, (cover_px, flap_px))
+    bottom_flap = resize_strip(bottom_strip, (cover_px, flap_px))
 
-    # Front cover panel.
+    inset = flap_px
+    top_mask = make_flap_mask(cover_px, flap_px, inset, "top")
+    bottom_mask = make_flap_mask(cover_px, flap_px, inset, "bottom")
+
+    sleeve.paste(top_flap, (origin_x, origin_y), top_mask)
+    sleeve.paste(bottom_flap, (origin_x, origin_y + flap_px + cover_px), bottom_mask)
+
+    # Front panel
     front_x = origin_x + cover_px
     sleeve.paste(front, (front_x, panel_y))
 
-    # Optional sealed flap uses edge-extension from the front cover's right edge.
+    # Optional seal flap, shaped as a side trapezium.
     if seal_px > 0:
         right_strip_width = max(1, cover_px // 40)
         right_strip = front.crop((cover_px - right_strip_width, 0, cover_px, cover_px))
+        seal_flap = resize_strip(right_strip, (seal_px, cover_px))
+
+        seal_inset = min(flap_px, cover_px // 4)
+        seal_mask = make_side_flap_mask(seal_px, cover_px, seal_inset)
+
         sleeve.paste(
-            resize_strip(right_strip, (seal_px, cover_px)),
+            seal_flap,
             (origin_x + cover_px * 2, panel_y),
+            seal_mask,
         )
 
     draw = ImageDraw.Draw(sleeve)
-
     line_px = max(1, mm_to_px(0.18, config.dpi))
 
-    draw_cut_outline(
-        draw,
-        origin_x,
-        origin_y,
-        cover_px,
-        flap_px,
-        seal_px,
-        line_px,
-    )
-
-    draw_external_fold_guides(
+    draw_template_guides(
         draw,
         origin_x,
         origin_y,
