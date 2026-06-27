@@ -27,6 +27,8 @@ Implemented:
 * Basic crop/fit handling
 * Optional conservative border trimming
 * Local image-folder workflow
+* list-albums 
+* album
 
 Not implemented yet:
 
@@ -137,9 +139,23 @@ Generate all albums found in the `Covers` folder:
 python .\src\mini_lp_sleeve_generator.py --covers ".\Covers" --output ".\output\mini_lp_sleeves.pdf" --pocket open
 ```
 
+Generate named album found in the `Covers` folder:
+
+```powershell
+python .\src\mini_lp_sleeve_generator.py --covers ".\Covers" --output ".\output\elvis_blue_hawaii.pdf" --pocket sealed --album "Elvis - Blue Hawaii"
+```
+
 ## Command-Line Options
 
 ```text
+--album
+    Only generate the named album.
+    Use the album folder name.
+    Can be used more than once.
+
+--list-albums
+    List discovered albums and exit.
+    
 --covers
     Folder containing album subfolders with Front.* and Back.* images.
     Default: Covers

@@ -83,6 +83,44 @@ def discover_albums(covers_folder: Path) -> list[AlbumArtwork]:
     return albums
 
 
+def album_display_name(album: AlbumArtwork) -> str:
+    """Return the user-facing album name from the album folder."""
+    return album.album_folder.name
+
+
+def filter_albums_by_name(
+    albums: list[AlbumArtwork], selected_names: list[str] | None
+) -> list[AlbumArtwork]:
+    """Filter discovered albums by folder/display name, case-insensitively."""
+    if not selected_names:
+        return albums
+
+    album_lookup = {album_display_name(album).casefold(): album for album in albums}
+    selected_albums = []
+    missing_names = []
+
+    for selected_name in selected_names:
+        album = album_lookup.get(selected_name.casefold())
+
+        if album is None:
+            missing_names.append(selected_name)
+        else:
+            selected_albums.append(album)
+
+    if missing_names:
+        print("Album name(s) not found:")
+        for missing_name in missing_names:
+            print(f" - {missing_name}")
+
+        print("\nAvailable albums:")
+        for album in albums:
+            print(f" - {album_display_name(album)}")
+
+        raise SystemExit(1)
+
+    return selected_albums
+
+
 def conservative_auto_trim(
     image: Image.Image, tolerance: int = 12, max_trim_percent: float = 5.0
 ) -> Image.Image:
@@ -777,7 +815,19 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Only process the first N albums, useful for testing.",
     )
-
+    parser.add_argument(
+        "--album",
+        action="append",
+        help=(
+            "Only generate the named album. "
+            "Use the album folder name. Can be used more than once."
+        ),
+    )
+    parser.add_argument(
+        "--list-albums",
+        action="store_true",
+        help="List discovered albums and exit.",
+    )
     return parser.parse_args()
 
 
@@ -796,6 +846,14 @@ def main() -> None:
     )
 
     albums = discover_albums(args.covers)
+
+    if args.list_albums:
+        print(f"Found {len(albums)} album(s).")
+        for album in albums:
+            print(f" - {album_display_name(album)}")
+        return
+
+    albums = filter_albums_by_name(albums, args.album)
 
     if args.max_albums is not None:
         albums = albums[: args.max_albums]
