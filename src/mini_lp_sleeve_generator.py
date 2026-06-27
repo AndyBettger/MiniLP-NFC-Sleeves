@@ -12,7 +12,6 @@ from reportlab.lib.pagesizes import A4
 from reportlab.lib.utils import ImageReader
 from reportlab.pdfgen import canvas
 
-
 MM_PER_INCH = 25.4
 SUPPORTED_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tif", ".tiff"}
 
@@ -22,6 +21,7 @@ class SleeveConfig:
     cover_size_mm: float = 60.0
     flap_size_mm: float = 8.0
     seal_flap_size_mm: float = 6.0
+    guide_margin_mm: float = 3.0
     dpi: int = 300
     pocket_mode: str = "open"  # "open" or "sealed"
     front_mode: str = "crop"  # "crop" or "fit"
@@ -83,7 +83,9 @@ def discover_albums(covers_folder: Path) -> list[AlbumArtwork]:
     return albums
 
 
-def conservative_auto_trim(image: Image.Image, tolerance: int = 12, max_trim_percent: float = 5.0) -> Image.Image:
+def conservative_auto_trim(
+    image: Image.Image, tolerance: int = 12, max_trim_percent: float = 5.0
+) -> Image.Image:
     """
     Conservative border trim.
 
@@ -222,6 +224,8 @@ def draw_dashed_line(
 
 def draw_cut_outline(
     draw: ImageDraw.ImageDraw,
+    origin_x: int,
+    origin_y: int,
     cover_px: int,
     flap_px: int,
     seal_px: int,
@@ -230,49 +234,82 @@ def draw_cut_outline(
     total_width = cover_px * 2 + seal_px
     total_height = cover_px + flap_px * 2
 
+    x = origin_x
+    y = origin_y
+
     points = [
-        (0, 0),
-        (cover_px, 0),
-        (cover_px, flap_px),
-        (total_width, flap_px),
-        (total_width, flap_px + cover_px),
-        (cover_px, flap_px + cover_px),
-        (cover_px, total_height),
-        (0, total_height),
-        (0, 0),
+        (x, y),
+        (x + cover_px, y),
+        (x + cover_px, y + flap_px),
+        (x + total_width, y + flap_px),
+        (x + total_width, y + flap_px + cover_px),
+        (x + cover_px, y + flap_px + cover_px),
+        (x + cover_px, y + total_height),
+        (x, y + total_height),
+        (x, y),
     ]
 
     draw.line(points, fill=(0, 0, 0), width=line_px, joint="curve")
 
 
-def draw_fold_guides(
+def draw_external_fold_guides(
     draw: ImageDraw.ImageDraw,
+    origin_x: int,
+    origin_y: int,
     cover_px: int,
     flap_px: int,
     seal_px: int,
     line_px: int,
     dpi: int,
 ) -> None:
+    """
+    Draw fold guides outside the artwork/template area.
+
+    This avoids printing dotted lines across the album artwork itself.
+    """
     fold_colour = (120, 120, 120)
-    dash_px = mm_to_px(2.5, dpi)
-    gap_px = mm_to_px(1.5, dpi)
+    dash_px = mm_to_px(1.5, dpi)
+    gap_px = mm_to_px(1.0, dpi)
+    guide_len_px = mm_to_px(4.0, dpi)
 
-    # Fold between back and front covers
+    x = origin_x
+    y = origin_y
+
+    panel_top = y + flap_px
+    panel_bottom = y + flap_px + cover_px
+
+    back_front_fold_x = x + cover_px
+    seal_fold_x = x + cover_px * 2
+
+    # Fold between back and front covers: short marks above and below the panels.
     draw_dashed_line(
         draw,
-        (cover_px, flap_px),
-        (cover_px, flap_px + cover_px),
+        (back_front_fold_x, panel_top - guide_len_px),
+        (back_front_fold_x, panel_top),
+        fold_colour,
+        line_px,
+        dash_px,
+        gap_px,
+    )
+    draw_dashed_line(
+        draw,
+        (back_front_fold_x, panel_bottom),
+        (back_front_fold_x, panel_bottom + guide_len_px),
         fold_colour,
         line_px,
         dash_px,
         gap_px,
     )
 
-    # Back-cover top and bottom glue flap folds
+    # Top/bottom glue flap fold marks.
+    # These are only on the back-cover side, so place guide ticks outside the left edge.
+    top_flap_fold_y = y + flap_px
+    bottom_flap_fold_y = y + flap_px + cover_px
+
     draw_dashed_line(
         draw,
-        (0, flap_px),
-        (cover_px, flap_px),
+        (x - guide_len_px, top_flap_fold_y),
+        (x, top_flap_fold_y),
         fold_colour,
         line_px,
         dash_px,
@@ -280,20 +317,29 @@ def draw_fold_guides(
     )
     draw_dashed_line(
         draw,
-        (0, flap_px + cover_px),
-        (cover_px, flap_px + cover_px),
+        (x - guide_len_px, bottom_flap_fold_y),
+        (x, bottom_flap_fold_y),
         fold_colour,
         line_px,
         dash_px,
         gap_px,
     )
 
-    # Optional sealed-pocket flap fold
+    # Optional sealed-pocket flap fold.
     if seal_px > 0:
         draw_dashed_line(
             draw,
-            (cover_px * 2, flap_px),
-            (cover_px * 2, flap_px + cover_px),
+            (seal_fold_x, panel_top - guide_len_px),
+            (seal_fold_x, panel_top),
+            fold_colour,
+            line_px,
+            dash_px,
+            gap_px,
+        )
+        draw_dashed_line(
+            draw,
+            (seal_fold_x, panel_bottom),
+            (seal_fold_x, panel_bottom + guide_len_px),
             fold_colour,
             line_px,
             dash_px,
@@ -301,17 +347,62 @@ def draw_fold_guides(
         )
 
 
+def draw_calibration_marks(pdf: canvas.Canvas) -> None:
+    page_width, _ = A4
+
+    pdf.setStrokeColorRGB(0, 0, 0)
+    pdf.setLineWidth(0.5)
+    pdf.setFont("Helvetica", 7)
+
+    # 50 mm calibration line in the top margin.
+    x = mm_to_points(103)
+    y = mm_to_points(284)
+
+    pdf.line(x, y, x + mm_to_points(50), y)
+    pdf.line(x, y - mm_to_points(1.5), x, y + mm_to_points(1.5))
+    pdf.line(
+        x + mm_to_points(50),
+        y - mm_to_points(1.5),
+        x + mm_to_points(50),
+        y + mm_to_points(1.5),
+    )
+    pdf.drawCentredString(
+        x + mm_to_points(25),
+        y + mm_to_points(2),
+        "50 mm calibration line",
+    )
+
+    # Small 10 mm calibration square in the top-right margin.
+    square_x = page_width - mm_to_points(18)
+    square_y = mm_to_points(282)
+
+    pdf.rect(square_x, square_y, mm_to_points(10), mm_to_points(10), stroke=1, fill=0)
+    pdf.drawCentredString(
+        square_x + mm_to_points(5),
+        square_y + mm_to_points(11.5),
+        "10 mm",
+    )
+
+
 def create_sleeve_image(album: AlbumArtwork, config: SleeveConfig) -> Image.Image:
     cover_px = mm_to_px(config.cover_size_mm, config.dpi)
     flap_px = mm_to_px(config.flap_size_mm, config.dpi)
+    guide_margin_px = mm_to_px(config.guide_margin_mm, config.dpi)
+
     seal_px = (
         mm_to_px(config.seal_flap_size_mm, config.dpi)
         if config.pocket_mode == "sealed"
         else 0
     )
 
-    total_width = cover_px * 2 + seal_px
-    total_height = cover_px + flap_px * 2
+    template_width = cover_px * 2 + seal_px
+    template_height = cover_px + flap_px * 2
+
+    total_width = template_width + guide_margin_px * 2
+    total_height = template_height + guide_margin_px * 2
+
+    origin_x = guide_margin_px
+    origin_y = guide_margin_px
 
     front = prepare_square_artwork(
         album.front_path,
@@ -332,20 +423,28 @@ def create_sleeve_image(album: AlbumArtwork, config: SleeveConfig) -> Image.Imag
 
     sleeve = Image.new("RGB", (total_width, total_height), "white")
 
-    # Back cover panel
-    back_x = 0
-    panel_y = flap_px
+    # Back cover panel.
+    back_x = origin_x
+    panel_y = origin_y + flap_px
     sleeve.paste(back, (back_x, panel_y))
 
     # Back-cover glue flaps use edge-extension from the back cover.
-    top_strip = back.crop((0, 0, cover_px, max(1, cover_px // 40)))
-    bottom_strip = back.crop((0, cover_px - max(1, cover_px // 40), cover_px, cover_px))
+    strip_height = max(1, cover_px // 40)
 
-    sleeve.paste(resize_strip(top_strip, (cover_px, flap_px)), (0, 0))
-    sleeve.paste(resize_strip(bottom_strip, (cover_px, flap_px)), (0, flap_px + cover_px))
+    top_strip = back.crop((0, 0, cover_px, strip_height))
+    bottom_strip = back.crop((0, cover_px - strip_height, cover_px, cover_px))
 
-    # Front cover panel
-    front_x = cover_px
+    sleeve.paste(
+        resize_strip(top_strip, (cover_px, flap_px)),
+        (origin_x, origin_y),
+    )
+    sleeve.paste(
+        resize_strip(bottom_strip, (cover_px, flap_px)),
+        (origin_x, origin_y + flap_px + cover_px),
+    )
+
+    # Front cover panel.
+    front_x = origin_x + cover_px
     sleeve.paste(front, (front_x, panel_y))
 
     # Optional sealed flap uses edge-extension from the front cover's right edge.
@@ -354,15 +453,33 @@ def create_sleeve_image(album: AlbumArtwork, config: SleeveConfig) -> Image.Imag
         right_strip = front.crop((cover_px - right_strip_width, 0, cover_px, cover_px))
         sleeve.paste(
             resize_strip(right_strip, (seal_px, cover_px)),
-            (cover_px * 2, panel_y),
+            (origin_x + cover_px * 2, panel_y),
         )
 
     draw = ImageDraw.Draw(sleeve)
 
     line_px = max(1, mm_to_px(0.18, config.dpi))
 
-    draw_cut_outline(draw, cover_px, flap_px, seal_px, line_px)
-    draw_fold_guides(draw, cover_px, flap_px, seal_px, line_px, config.dpi)
+    draw_cut_outline(
+        draw,
+        origin_x,
+        origin_y,
+        cover_px,
+        flap_px,
+        seal_px,
+        line_px,
+    )
+
+    draw_external_fold_guides(
+        draw,
+        origin_x,
+        origin_y,
+        cover_px,
+        flap_px,
+        seal_px,
+        line_px,
+        config.dpi,
+    )
 
     return sleeve
 
@@ -379,47 +496,25 @@ def chunked(items: list[AlbumArtwork], size: int) -> Iterable[list[AlbumArtwork]
         yield items[index : index + size]
 
 
-def draw_calibration_marks(pdf: canvas.Canvas) -> None:
-    page_width, _ = A4
-
-    x = mm_to_points(80)
-    y = mm_to_points(8)
-
-    pdf.setStrokeColorRGB(0, 0, 0)
-    pdf.setLineWidth(0.5)
-
-    # 50 mm calibration line
-    pdf.line(x, y, x + mm_to_points(50), y)
-    pdf.line(x, y - mm_to_points(1.5), x, y + mm_to_points(1.5))
-    pdf.line(
-        x + mm_to_points(50),
-        y - mm_to_points(1.5),
-        x + mm_to_points(50),
-        y + mm_to_points(1.5),
-    )
-
-    pdf.setFont("Helvetica", 7)
-    pdf.drawCentredString(x + mm_to_points(25), y + mm_to_points(2.5), "50 mm calibration line")
-
-    # Small 10 mm calibration square
-    square_x = page_width - mm_to_points(25)
-    square_y = mm_to_points(5)
-    pdf.rect(square_x, square_y, mm_to_points(10), mm_to_points(10), stroke=1, fill=0)
-    pdf.drawCentredString(square_x + mm_to_points(5), square_y + mm_to_points(11.5), "10 mm")
-
-
-def create_pdf(albums: list[AlbumArtwork], output_path: Path, config: SleeveConfig) -> None:
+def create_pdf(
+    albums: list[AlbumArtwork], output_path: Path, config: SleeveConfig
+) -> None:
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     page_width, page_height = A4
 
     seal_mm = config.seal_flap_size_mm if config.pocket_mode == "sealed" else 0.0
+
     sleeve_width_mm = config.cover_size_mm * 2 + seal_mm
     sleeve_height_mm = config.cover_size_mm + config.flap_size_mm * 2
 
+    # The rendered sleeve image includes a guide margin around the physical template.
+    rendered_width_mm = sleeve_width_mm + config.guide_margin_mm * 2
+    rendered_height_mm = sleeve_height_mm + config.guide_margin_mm * 2
+
     # Sleeves are rotated 90 degrees on the A4 page.
-    placed_width_mm = sleeve_height_mm
-    placed_height_mm = sleeve_width_mm
+    placed_width_mm = rendered_height_mm
+    placed_height_mm = rendered_width_mm
 
     placed_width_pt = mm_to_points(placed_width_mm)
     placed_height_pt = mm_to_points(placed_height_mm)
@@ -428,8 +523,15 @@ def create_pdf(albums: list[AlbumArtwork], output_path: Path, config: SleeveConf
     rows = 2
     sleeves_per_page = columns * rows
 
-    x_gap = (page_width - (columns * placed_width_pt)) / (columns + 1)
-    y_gap = (page_height - (rows * placed_height_pt)) / (rows + 1)
+    side_margin_pt = mm_to_points(13)
+    top_margin_pt = mm_to_points(18)
+    bottom_margin_pt = mm_to_points(6)
+
+    available_width = page_width - side_margin_pt * 2
+    available_height = page_height - top_margin_pt - bottom_margin_pt
+
+    x_gap = (available_width - columns * placed_width_pt) / (columns - 1)
+    y_gap = (available_height - rows * placed_height_pt) / (rows - 1)
 
     if x_gap < 0 or y_gap < 0:
         raise ValueError("Sleeve layout does not fit on A4 with the current settings.")
@@ -438,12 +540,29 @@ def create_pdf(albums: list[AlbumArtwork], output_path: Path, config: SleeveConf
     pdf.setTitle("Mini LP NFC Sleeves")
 
     for page_albums in chunked(albums, sleeves_per_page):
+        # One-line header to preserve page space.
+        pdf.setFont("Helvetica", 7)
+        pdf.drawString(
+            mm_to_points(8),
+            mm_to_points(291),
+            (
+                "Print at 100% / Actual Size - Do not Fit to Page | "
+                f"Sleeve: {config.cover_size_mm:g} mm | "
+                f"Pocket: {config.pocket_mode} | "
+                f"Flaps: {config.flap_size_mm:g} mm"
+            ),
+        )
+
+        draw_calibration_marks(pdf)
+
         for slot_index, album in enumerate(page_albums):
             column = slot_index % columns
             row = slot_index // columns
 
-            x = x_gap + column * (placed_width_pt + x_gap)
-            y = page_height - y_gap - placed_height_pt - row * (placed_height_pt + y_gap)
+            x = side_margin_pt + column * (placed_width_pt + x_gap)
+
+            # Row 0 is the top row.
+            y = bottom_margin_pt + (rows - 1 - row) * (placed_height_pt + y_gap)
 
             sleeve_image = create_sleeve_image(album, config)
             rotated = sleeve_image.rotate(90, expand=True)
@@ -460,20 +579,6 @@ def create_pdf(albums: list[AlbumArtwork], output_path: Path, config: SleeveConf
 
             pdf.setFont("Helvetica", 6)
             pdf.drawString(x, y - mm_to_points(3), album.album_folder.name[:60])
-
-        draw_calibration_marks(pdf)
-
-        pdf.setFont("Helvetica", 7)
-        pdf.drawString(
-            mm_to_points(8),
-            mm_to_points(287),
-            "Print at 100% / Actual Size. Do not use Fit to Page.",
-        )
-        pdf.drawString(
-            mm_to_points(8),
-            mm_to_points(283),
-            f"Sleeve: {config.cover_size_mm:g} mm | Pocket: {config.pocket_mode} | Flaps: {config.flap_size_mm:g} mm",
-        )
 
         pdf.showPage()
 
@@ -508,6 +613,12 @@ def parse_args() -> argparse.Namespace:
         type=float,
         default=60.0,
         help="Finished square cover size in mm.",
+    )
+    parser.add_argument(
+        "--guide-margin",
+        type=float,
+        default=3.0,
+        help="Extra white margin around each sleeve for external cut/fold guide marks.",
     )
     parser.add_argument(
         "--flap-size",
@@ -555,6 +666,7 @@ def main() -> None:
         cover_size_mm=args.cover_size,
         flap_size_mm=args.flap_size,
         seal_flap_size_mm=args.seal_flap_size,
+        guide_margin_mm=args.guide_margin,
         pocket_mode=args.pocket,
         front_mode=args.front_mode,
         back_mode=args.back_mode,
