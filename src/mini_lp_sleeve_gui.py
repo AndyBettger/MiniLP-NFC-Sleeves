@@ -28,6 +28,10 @@ class MiniLPSleeveGUI(tk.Tk):
             Path(__file__).resolve().with_name("mini_lp_sleeve_generator.py")
         )
 
+        self.downloader_script = (
+            Path(__file__).resolve().with_name("download_album_art.py")
+        )
+
         self.title("MiniLP NFC Sleeve Generator")
         self.geometry("760x560")
         self.minsize(700, 500)
@@ -38,6 +42,11 @@ class MiniLPSleeveGUI(tk.Tk):
         )
         self.pocket_var = tk.StringVar(value="sealed")
         self.status_var = tk.StringVar(value="Ready.")
+
+        self.download_album_var = tk.StringVar()
+        self.download_front_url_var = tk.StringVar()
+        self.download_back_url_var = tk.StringVar()
+        self.download_overwrite_var = tk.BooleanVar(value=False)
 
         self.album_listbox: tk.Listbox
 
@@ -95,6 +104,57 @@ class MiniLPSleeveGUI(tk.Tk):
             variable=self.pocket_var,
             value="open",
         ).pack(side=tk.LEFT, padx=(10, 0))
+
+        download_frame = ttk.LabelFrame(
+            main_frame,
+            text="Download Artwork from URLs",
+            padding=10,
+        )
+        download_frame.pack(fill=tk.X, pady=(10, 0))
+
+        ttk.Label(download_frame, text="Album folder name:").grid(
+            row=0, column=0, sticky="w", padx=(0, 8), pady=4
+        )
+        ttk.Entry(download_frame, textvariable=self.download_album_var).grid(
+            row=0, column=1, sticky="ew", pady=4
+        )
+
+        ttk.Label(download_frame, text="Front image URL:").grid(
+            row=1, column=0, sticky="w", padx=(0, 8), pady=4
+        )
+        ttk.Entry(download_frame, textvariable=self.download_front_url_var).grid(
+            row=1, column=1, sticky="ew", pady=4
+        )
+
+        ttk.Label(download_frame, text="Back image URL:").grid(
+            row=2, column=0, sticky="w", padx=(0, 8), pady=4
+        )
+        ttk.Entry(download_frame, textvariable=self.download_back_url_var).grid(
+            row=2, column=1, sticky="ew", pady=4
+        )
+
+        download_button_frame = ttk.Frame(download_frame)
+        download_button_frame.grid(row=3, column=1, sticky="e", pady=(6, 0))
+
+        ttk.Checkbutton(
+            download_button_frame,
+            text="Overwrite existing artwork",
+            variable=self.download_overwrite_var,
+        ).pack(side=tk.LEFT, padx=(0, 12))
+
+        ttk.Button(
+            download_button_frame,
+            text="Clear",
+            command=self.clear_download_fields,
+        ).pack(side=tk.LEFT, padx=(0, 8))
+
+        ttk.Button(
+            download_button_frame,
+            text="Download Artwork",
+            command=self.download_artwork,
+        ).pack(side=tk.LEFT)
+
+        download_frame.columnconfigure(1, weight=1)
 
         albums_frame = ttk.LabelFrame(main_frame, text="Albums", padding=10)
         albums_frame.pack(fill=tk.BOTH, expand=True, pady=(10, 0))
@@ -248,6 +308,88 @@ class MiniLPSleeveGUI(tk.Tk):
         return [
             self.album_listbox.get(index) for index in self.album_listbox.curselection()
         ]
+
+    def clear_download_fields(self) -> None:
+        self.download_album_var.set("")
+        self.download_front_url_var.set("")
+        self.download_back_url_var.set("")
+        self.download_overwrite_var.set(False)
+
+    def select_album_by_name(self, album_name: str) -> None:
+        self.album_listbox.select_clear(0, tk.END)
+
+        for index in range(self.album_listbox.size()):
+            if self.album_listbox.get(index) == album_name:
+                self.album_listbox.select_set(index)
+                self.album_listbox.see(index)
+                return
+
+    def download_artwork(self) -> None:
+        album_name = self.download_album_var.get().strip()
+        front_url = self.download_front_url_var.get().strip()
+        back_url = self.download_back_url_var.get().strip()
+
+        if not album_name:
+            messagebox.showwarning(
+                "Album Name Required",
+                "Enter an album folder name before downloading artwork.",
+            )
+            return
+
+        if not front_url and not back_url:
+            messagebox.showwarning(
+                "Image URL Required",
+                "Enter at least one front or back image URL.",
+            )
+            return
+
+        covers_folder = self.resolve_path(self.covers_var.get())
+
+        command = [
+            sys.executable,
+            str(self.downloader_script),
+            "--album",
+            album_name,
+            "--covers",
+            str(covers_folder),
+        ]
+
+        if front_url:
+            command.extend(["--front-url", front_url])
+
+        if back_url:
+            command.extend(["--back-url", back_url])
+
+        if self.download_overwrite_var.get():
+            command.append("--overwrite")
+
+        self.status_var.set("Downloading artwork...")
+        self.update_idletasks()
+
+        result = subprocess.run(
+            command,
+            cwd=self.project_root,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        if result.returncode != 0:
+            messagebox.showerror(
+                "Artwork Download Failed",
+                result.stderr or result.stdout or "Unknown error.",
+            )
+            self.status_var.set("Artwork download failed.")
+            return
+
+        self.refresh_albums()
+        self.select_album_by_name(album_name)
+
+        self.status_var.set(f"Downloaded artwork for: {album_name}")
+        messagebox.showinfo(
+            "Artwork Downloaded",
+            f"Downloaded artwork for:\n{album_name}",
+        )
 
     def generate_pdf(self) -> None:
         selected_albums = self.selected_album_names()

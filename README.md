@@ -156,8 +156,12 @@ The GUI can:
 - choose an output PDF path
 - generate the PDF using the command-line generator
 - open the output PDF or output folder
+- download front/back artwork from image URLs
+- refresh the album list after downloading artwork
 
 The GUI is currently a simple wrapper around the command-line generator. Image preview and artwork download controls are planned future improvements.
+
+The GUI can also download front/back artwork from direct image URLs into the selected `Covers` folder.
 
 ## Command-Line Usage
 
