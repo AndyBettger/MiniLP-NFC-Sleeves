@@ -449,3 +449,7 @@ Planned future features:
 - Automatic A4 page packing
 - Alternative flap sizes
 - Print-shop friendly output mode
+
+## Licence
+
+This project is licensed under the MIT Licence. See [LICENSE](LICENSE) for details.
