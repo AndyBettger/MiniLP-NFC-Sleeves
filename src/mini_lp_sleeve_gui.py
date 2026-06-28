@@ -1,4 +1,5 @@
 from __future__ import annotations
+from PIL import Image, ImageTk, UnidentifiedImageError
 
 import os
 import subprocess
@@ -18,6 +19,13 @@ IMAGE_SUFFIXES = {
     ".tiff",
 }
 
+PREVIEW_PANEL_WIDTH = 490
+PREVIEW_TITLE_HEIGHT = 48
+PREVIEW_CARD_WIDTH = 230
+PREVIEW_CARD_HEIGHT = 305
+PREVIEW_IMAGE_BOX_SIZE = 205
+PREVIEW_IMAGE_SIZE = 180
+PREVIEW_INFO_HEIGHT = 56
 
 class MiniLPSleeveGUI(tk.Tk):
     def __init__(self) -> None:
@@ -33,8 +41,8 @@ class MiniLPSleeveGUI(tk.Tk):
         )
 
         self.title("MiniLP NFC Sleeve Generator")
-        self.geometry("760x560")
-        self.minsize(700, 500)
+        self.geometry("1150x760")
+        self.minsize(950, 650)
 
         self.covers_var = tk.StringVar(value=str(self.project_root / "Covers"))
         self.output_var = tk.StringVar(
@@ -47,6 +55,18 @@ class MiniLPSleeveGUI(tk.Tk):
         self.download_front_url_var = tk.StringVar()
         self.download_back_url_var = tk.StringVar()
         self.download_overwrite_var = tk.BooleanVar(value=False)
+
+        self.preview_title_var = tk.StringVar(value="Select an album to preview.")
+        self.front_info_var = tk.StringVar(value="Front: -")
+        self.back_info_var = tk.StringVar(value="Back: -")
+
+        self.front_preview_image: ImageTk.PhotoImage | None = None
+        self.back_preview_image: ImageTk.PhotoImage | None = None
+
+        self.front_preview_label: ttk.Label
+        self.back_preview_label: ttk.Label
+        self.front_info_label: ttk.Label
+        self.back_info_label: ttk.Label
 
         self.album_listbox: tk.Listbox
 
@@ -159,59 +179,165 @@ class MiniLPSleeveGUI(tk.Tk):
         albums_frame = ttk.LabelFrame(main_frame, text="Albums", padding=10)
         albums_frame.pack(fill=tk.BOTH, expand=True, pady=(10, 0))
 
+        album_list_frame = ttk.Frame(albums_frame)
+        album_list_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
         self.album_listbox = tk.Listbox(
-            albums_frame,
+            album_list_frame,
             selectmode=tk.EXTENDED,
             exportselection=False,
         )
         self.album_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        self.album_listbox.bind("<<ListboxSelect>>", self.update_preview_from_selection)
 
         scrollbar = ttk.Scrollbar(
-            albums_frame,
+            album_list_frame,
             orient=tk.VERTICAL,
             command=self.album_listbox.yview,
         )
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         self.album_listbox.configure(yscrollcommand=scrollbar.set)
 
-        button_frame = ttk.Frame(main_frame)
-        button_frame.pack(fill=tk.X, pady=(10, 0))
+        preview_frame = ttk.Frame(
+            albums_frame,
+            width=PREVIEW_PANEL_WIDTH,
+            padding=(10, 0, 0, 0),
+        )
+        preview_frame.pack(side=tk.RIGHT, fill=tk.Y)
+        preview_frame.pack_propagate(False)
+
+        preview_title_frame = ttk.Frame(
+            preview_frame,
+            width=PREVIEW_PANEL_WIDTH,
+            height=PREVIEW_TITLE_HEIGHT,
+        )
+        preview_title_frame.pack(fill=tk.X, pady=(0, 8))
+        preview_title_frame.pack_propagate(False)
+
+        ttk.Label(
+            preview_title_frame,
+            textvariable=self.preview_title_var,
+            wraplength=PREVIEW_PANEL_WIDTH - 20,
+            anchor="nw",
+            justify=tk.LEFT,
+        ).pack(fill=tk.BOTH, expand=True)
+
+        preview_cards_frame = ttk.Frame(preview_frame)
+        preview_cards_frame.pack(fill=tk.X)
+
+        front_frame = ttk.LabelFrame(
+            preview_cards_frame,
+            text="Front",
+            padding=6,
+            width=PREVIEW_CARD_WIDTH,
+            height=PREVIEW_CARD_HEIGHT,
+        )
+        front_frame.pack(side=tk.LEFT, fill=tk.Y, padx=(0, 8))
+        front_frame.pack_propagate(False)
+
+        front_frame.columnconfigure(0, weight=1)
+        front_frame.rowconfigure(0, minsize=PREVIEW_IMAGE_BOX_SIZE)
+        front_frame.rowconfigure(1, minsize=PREVIEW_INFO_HEIGHT)
+
+        front_image_frame = ttk.Frame(
+            front_frame,
+            width=PREVIEW_CARD_WIDTH - 12,
+            height=PREVIEW_IMAGE_BOX_SIZE,
+        )
+        front_image_frame.grid(row=0, column=0, sticky="nsew")
+        front_image_frame.grid_propagate(False)
+
+        self.front_preview_label = ttk.Label(
+            front_image_frame,
+            text="No front preview",
+            anchor="center",
+            justify=tk.CENTER,
+        )
+        self.front_preview_label.pack(fill=tk.BOTH, expand=True)
+
+        self.front_info_label = ttk.Label(
+            front_frame,
+            textvariable=self.front_info_var,
+            anchor="center",
+            justify=tk.CENTER,
+            wraplength=PREVIEW_CARD_WIDTH - 20,
+        )
+        self.front_info_label.grid(row=1, column=0, sticky="nsew", pady=(4, 0))
+
+        back_frame = ttk.LabelFrame(
+            preview_cards_frame,
+            text="Back",
+            padding=6,
+            width=PREVIEW_CARD_WIDTH,
+            height=PREVIEW_CARD_HEIGHT,
+        )
+        back_frame.pack(side=tk.LEFT, fill=tk.Y)
+        back_frame.pack_propagate(False)
+
+        back_frame.columnconfigure(0, weight=1)
+        back_frame.rowconfigure(0, minsize=PREVIEW_IMAGE_BOX_SIZE)
+        back_frame.rowconfigure(1, minsize=PREVIEW_INFO_HEIGHT)
+
+        back_image_frame = ttk.Frame(
+            back_frame,
+            width=PREVIEW_CARD_WIDTH - 12,
+            height=PREVIEW_IMAGE_BOX_SIZE,
+        )
+        back_image_frame.grid(row=0, column=0, sticky="nsew")
+        back_image_frame.grid_propagate(False)
+
+        self.back_preview_label = ttk.Label(
+            back_image_frame,
+            text="No back preview",
+            anchor="center",
+            justify=tk.CENTER,
+        )
+        self.back_preview_label.pack(fill=tk.BOTH, expand=True)
+
+        self.back_info_label = ttk.Label(
+            back_frame,
+            textvariable=self.back_info_var,
+            anchor="center",
+            justify=tk.CENTER,
+            wraplength=PREVIEW_CARD_WIDTH - 20,
+        )
+        self.back_info_label.grid(row=1, column=0, sticky="nsew", pady=(4, 0))
+
+        action_frame = ttk.Frame(main_frame)
+        action_frame.pack(fill=tk.X, pady=(10, 0))
 
         ttk.Button(
-            button_frame,
+            action_frame,
             text="Refresh Albums",
             command=self.refresh_albums,
         ).pack(side=tk.LEFT)
 
         ttk.Button(
-            button_frame,
+            action_frame,
             text="Select All",
             command=self.select_all_albums,
         ).pack(side=tk.LEFT, padx=(8, 0))
 
         ttk.Button(
-            button_frame,
+            action_frame,
             text="Clear Selection",
             command=self.clear_album_selection,
         ).pack(side=tk.LEFT, padx=(8, 0))
 
         ttk.Button(
-            button_frame,
+            action_frame,
             text="Generate PDF",
             command=self.generate_pdf,
         ).pack(side=tk.RIGHT)
 
-        open_frame = ttk.Frame(main_frame)
-        open_frame.pack(fill=tk.X, pady=(10, 0))
-
         ttk.Button(
-            open_frame,
+            action_frame,
             text="Open Output PDF",
             command=self.open_output_pdf,
-        ).pack(side=tk.RIGHT)
+        ).pack(side=tk.RIGHT, padx=(0, 8))
 
         ttk.Button(
-            open_frame,
+            action_frame,
             text="Open Output Folder",
             command=self.open_output_folder,
         ).pack(side=tk.RIGHT, padx=(0, 8))
@@ -221,7 +347,7 @@ class MiniLPSleeveGUI(tk.Tk):
             textvariable=self.status_var,
             anchor="w",
         )
-        status_label.pack(fill=tk.X, pady=(10, 0))
+        status_label.pack(fill=tk.X, pady=(8, 0))
 
     def resolve_path(self, value: str) -> Path:
         path = Path(value).expanduser()
@@ -254,17 +380,7 @@ class MiniLPSleeveGUI(tk.Tk):
             self.output_var.set(output_path)
 
     def has_front_image(self, album_folder: Path) -> bool:
-        for path in album_folder.iterdir():
-            if not path.is_file():
-                continue
-
-            if (
-                path.stem.casefold() == "front"
-                and path.suffix.lower() in IMAGE_SUFFIXES
-            ):
-                return True
-
-        return False
+        return self.find_album_image(album_folder, "front") is not None
 
     def discover_album_names(self) -> list[str]:
         covers_folder = self.resolve_path(self.covers_var.get())
@@ -283,6 +399,134 @@ class MiniLPSleeveGUI(tk.Tk):
 
         return album_names
 
+    def find_album_image(self, album_folder: Path, image_name: str) -> Path | None:
+        """Find Front.* or Back.* image in an album folder."""
+        for path in album_folder.iterdir():
+            if not path.is_file():
+                continue
+
+            if (
+                path.stem.casefold() == image_name.casefold()
+                and path.suffix.lower() in IMAGE_SUFFIXES
+            ):
+                return path
+
+        return None
+
+    def album_folder_for_name(self, album_name: str) -> Path:
+        """Return the folder path for an album name."""
+        return self.resolve_path(self.covers_var.get()) / album_name
+
+    def image_quality_note(self, width: int, height: int) -> str:
+        """Return a small quality note based on image dimensions."""
+        shortest_side = min(width, height)
+
+        if shortest_side < 300:
+            return "very small"
+        if shortest_side < 500:
+            return "low resolution"
+        if shortest_side < 800:
+            return "usable"
+
+        return "good"
+
+    def load_preview_image(
+            self,
+            image_path: Path,
+            max_size: tuple[int, int] = (PREVIEW_IMAGE_SIZE, PREVIEW_IMAGE_SIZE),
+    ) -> tuple[ImageTk.PhotoImage, str]:
+        """Load an image as a Tkinter thumbnail and return info text."""
+        with Image.open(image_path) as image:
+            width, height = image.size
+            preview = image.convert("RGB")
+            preview.thumbnail(max_size, Image.Resampling.LANCZOS)
+
+        photo = ImageTk.PhotoImage(preview)
+        quality_note = self.image_quality_note(width, height)
+        info = f"{width} × {height} px ({quality_note})"
+
+        return photo, info
+
+    def update_single_preview(
+        self,
+        preview_label: ttk.Label,
+        preview_attr_name: str,
+        info_var: tk.StringVar,
+        image_path: Path | None,
+        label_text: str,
+    ) -> None:
+        """Update one preview panel."""
+        if image_path is None:
+            setattr(self, preview_attr_name, None)
+            preview_label.configure(
+                image="",
+                text=f"{label_text} image missing",
+            )
+            info_var.set(f"{label_text}: missing")
+            return
+        try:
+            photo, info = self.load_preview_image(image_path)
+        except (OSError, UnidentifiedImageError) as exc:
+            setattr(self, preview_attr_name, None)
+            preview_label.configure(
+                image="", text=f"Could not load {label_text.lower()}"
+            )
+            info_var.set(f"{label_text}: error - {exc}")
+            return
+
+        setattr(self, preview_attr_name, photo)
+        preview_label.configure(image=photo, text="")
+        info_var.set(f"{label_text}: {info}")
+
+    def clear_previews(self) -> None:
+        """Clear front/back preview panels."""
+        self.front_preview_image = None
+        self.back_preview_image = None
+
+        self.front_preview_label.configure(image="", text="No front preview")
+        self.back_preview_label.configure(image="", text="No back preview")
+        self.front_info_var.set("Front: -")
+        self.back_info_var.set("Back: -")
+
+    def update_preview_from_selection(self, _event: tk.Event | None = None) -> None:
+        """Update the preview panel based on the first selected album."""
+        selected_albums = self.selected_album_names()
+
+        if not selected_albums:
+            self.preview_title_var.set("Select an album to preview.")
+            self.clear_previews()
+            return
+
+        album_name = selected_albums[0]
+
+        if len(selected_albums) > 1:
+            self.preview_title_var.set(
+                f"Preview: {album_name} (+ {len(selected_albums) - 1} more selected)"
+            )
+        else:
+            self.preview_title_var.set(f"Preview: {album_name}")
+
+        album_folder = self.album_folder_for_name(album_name)
+
+        front_path = self.find_album_image(album_folder, "front")
+        back_path = self.find_album_image(album_folder, "back")
+
+        self.update_single_preview(
+            self.front_preview_label,
+            "front_preview_image",
+            self.front_info_var,
+            front_path,
+            "Front",
+        )
+
+        self.update_single_preview(
+            self.back_preview_label,
+            "back_preview_image",
+            self.back_info_var,
+            back_path,
+            "Back",
+        )
+
     def refresh_albums(self) -> None:
         self.album_listbox.delete(0, tk.END)
 
@@ -297,12 +541,15 @@ class MiniLPSleeveGUI(tk.Tk):
             self.album_listbox.insert(tk.END, album_name)
 
         self.status_var.set(f"Found {len(album_names)} album(s).")
+        self.update_preview_from_selection()
 
     def select_all_albums(self) -> None:
         self.album_listbox.select_set(0, tk.END)
+        self.update_preview_from_selection()
 
     def clear_album_selection(self) -> None:
         self.album_listbox.select_clear(0, tk.END)
+        self.update_preview_from_selection()
 
     def selected_album_names(self) -> list[str]:
         return [
@@ -322,7 +569,10 @@ class MiniLPSleeveGUI(tk.Tk):
             if self.album_listbox.get(index) == album_name:
                 self.album_listbox.select_set(index)
                 self.album_listbox.see(index)
+                self.update_preview_from_selection()
                 return
+
+        self.update_preview_from_selection()
 
     def download_artwork(self) -> None:
         album_name = self.download_album_var.get().strip()
