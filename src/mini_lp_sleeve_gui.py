@@ -22,12 +22,12 @@ IMAGE_SUFFIXES = {
 }
 
 PREVIEW_PANEL_WIDTH = 490
-PREVIEW_TITLE_HEIGHT = 48
+PREVIEW_TITLE_HEIGHT = 36
 PREVIEW_CARD_WIDTH = 230
-PREVIEW_CARD_HEIGHT = 305
-PREVIEW_IMAGE_BOX_SIZE = 205
+PREVIEW_CARD_HEIGHT = 250
+PREVIEW_IMAGE_BOX_SIZE = 184
 PREVIEW_IMAGE_SIZE = 180
-PREVIEW_INFO_HEIGHT = 56
+PREVIEW_INFO_HEIGHT = 30
 
 SETTINGS_FILENAME = ".mini_lp_nfc_sleeves_settings.json"
 
@@ -47,7 +47,7 @@ class MiniLPSleeveGUI(tk.Tk):
 
         self.title("MiniLP NFC Sleeve Generator")
         self.geometry("1150x760")
-        self.minsize(950, 650)
+        self.minsize(950, 600)
 
         self.covers_var = tk.StringVar(value=str(self.project_root / "Covers"))
         self.settings_path = Path.home() / SETTINGS_FILENAME
@@ -358,7 +358,7 @@ class MiniLPSleeveGUI(tk.Tk):
             width=PREVIEW_PANEL_WIDTH,
             height=PREVIEW_TITLE_HEIGHT,
         )
-        preview_title_frame.pack(fill=tk.X, pady=(0, 8))
+        preview_title_frame.pack(fill=tk.X, pady=(0, 2))
         preview_title_frame.pack_propagate(False)
 
         ttk.Label(
@@ -409,7 +409,7 @@ class MiniLPSleeveGUI(tk.Tk):
             justify=tk.CENTER,
             wraplength=PREVIEW_CARD_WIDTH - 20,
         )
-        self.front_info_label.grid(row=1, column=0, sticky="nsew", pady=(4, 0))
+        self.front_info_label.grid(row=1, column=0, sticky="nsew", pady=(0, 0))
 
         back_frame = ttk.LabelFrame(
             preview_cards_frame,
@@ -448,7 +448,7 @@ class MiniLPSleeveGUI(tk.Tk):
             justify=tk.CENTER,
             wraplength=PREVIEW_CARD_WIDTH - 20,
         )
-        self.back_info_label.grid(row=1, column=0, sticky="nsew", pady=(4, 0))
+        self.back_info_label.grid(row=1, column=0, sticky="nsew", pady=(0, 0))
 
         action_frame = ttk.Frame(main_frame)
         action_frame.pack(fill=tk.X, pady=(10, 0))
