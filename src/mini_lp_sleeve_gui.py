@@ -8,6 +8,8 @@ import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox
 from tkinter import ttk
+import json
+from datetime import datetime
 
 IMAGE_SUFFIXES = {
     ".jpg",
@@ -27,6 +29,9 @@ PREVIEW_IMAGE_BOX_SIZE = 205
 PREVIEW_IMAGE_SIZE = 180
 PREVIEW_INFO_HEIGHT = 56
 
+SETTINGS_FILENAME = ".mini_lp_nfc_sleeves_settings.json"
+
+
 class MiniLPSleeveGUI(tk.Tk):
     def __init__(self) -> None:
         super().__init__()
@@ -45,11 +50,17 @@ class MiniLPSleeveGUI(tk.Tk):
         self.minsize(950, 650)
 
         self.covers_var = tk.StringVar(value=str(self.project_root / "Covers"))
-        self.output_var = tk.StringVar(
-            value=str(self.project_root / "output" / "gui_selected_sleeves.pdf")
-        )
+        self.settings_path = Path.home() / SETTINGS_FILENAME
+
+        self.covers_var = tk.StringVar()
+        self.output_folder_var = tk.StringVar()
         self.pocket_var = tk.StringVar(value="sealed")
+        self.settings_summary_var = tk.StringVar()
         self.status_var = tk.StringVar(value="Ready.")
+
+        self.last_output_pdf: Path | None = None
+
+        self.load_settings()
 
         self.download_album_var = tk.StringVar()
         self.download_front_url_var = tk.StringVar()
@@ -73,57 +84,193 @@ class MiniLPSleeveGUI(tk.Tk):
         self.build_ui()
         self.refresh_albums()
 
+    def default_settings(self) -> dict[str, str]:
+        return {
+            "covers_folder": str(self.project_root / "Covers"),
+            "output_folder": str(self.project_root / "output"),
+            "pocket_style": "sealed",
+        }
+
+    def load_settings(self) -> None:
+        settings = self.default_settings()
+
+        if self.settings_path.exists():
+            try:
+                loaded_settings = json.loads(
+                    self.settings_path.read_text(encoding="utf-8")
+                )
+            except (OSError, json.JSONDecodeError):
+                loaded_settings = {}
+
+            if isinstance(loaded_settings, dict):
+                settings.update(
+                    {
+                        key: str(value)
+                        for key, value in loaded_settings.items()
+                        if key in settings
+                    }
+                )
+
+        self.covers_var.set(settings["covers_folder"])
+        self.output_folder_var.set(settings["output_folder"])
+        self.pocket_var.set(settings["pocket_style"])
+
+        if self.pocket_var.get() not in {"open", "sealed"}:
+            self.pocket_var.set("sealed")
+
+        self.update_settings_summary()
+
+    def save_settings(self) -> None:
+        settings = {
+            "covers_folder": self.covers_var.get(),
+            "output_folder": self.output_folder_var.get(),
+            "pocket_style": self.pocket_var.get(),
+        }
+
+        self.settings_path.write_text(
+            json.dumps(settings, indent=2),
+            encoding="utf-8",
+        )
+
+        self.update_settings_summary()
+
+    def update_settings_summary(self) -> None:
+        self.settings_summary_var.set(
+            "Settings: "
+            f"Covers = {self.covers_var.get()} | "
+            f"Output = {self.output_folder_var.get()} | "
+            f"Pocket = {self.pocket_var.get()}"
+        )
+
+    def open_settings_dialog(self) -> None:
+        dialog = tk.Toplevel(self)
+        dialog.title("Settings")
+        dialog.transient(self)
+        dialog.grab_set()
+        dialog.resizable(False, False)
+
+        covers_var = tk.StringVar(value=self.covers_var.get())
+        output_folder_var = tk.StringVar(value=self.output_folder_var.get())
+        pocket_var = tk.StringVar(value=self.pocket_var.get())
+
+        frame = ttk.Frame(dialog, padding=12)
+        frame.pack(fill=tk.BOTH, expand=True)
+
+        ttk.Label(frame, text="Covers folder:").grid(
+            row=0, column=0, sticky="w", padx=(0, 8), pady=4
+        )
+        ttk.Entry(frame, textvariable=covers_var, width=80).grid(
+            row=0, column=1, sticky="ew", pady=4
+        )
+
+        def browse_covers() -> None:
+            folder = filedialog.askdirectory(
+                title="Choose Covers folder",
+                initialdir=self.resolve_path(covers_var.get()),
+                parent=dialog,
+            )
+
+            if folder:
+                covers_var.set(folder)
+
+        ttk.Button(frame, text="Browse...", command=browse_covers).grid(
+            row=0, column=2, padx=(8, 0), pady=4
+        )
+
+        ttk.Label(frame, text="Output folder:").grid(
+            row=1, column=0, sticky="w", padx=(0, 8), pady=4
+        )
+        ttk.Entry(frame, textvariable=output_folder_var, width=80).grid(
+            row=1, column=1, sticky="ew", pady=4
+        )
+
+        def browse_output_folder() -> None:
+            folder = filedialog.askdirectory(
+                title="Choose output folder",
+                initialdir=self.resolve_path(output_folder_var.get()),
+                parent=dialog,
+            )
+
+            if folder:
+                output_folder_var.set(folder)
+
+        ttk.Button(frame, text="Browse...", command=browse_output_folder).grid(
+            row=1, column=2, padx=(8, 0), pady=4
+        )
+
+        pocket_frame = ttk.LabelFrame(frame, text="Default pocket style", padding=8)
+        pocket_frame.grid(row=2, column=0, columnspan=3, sticky="ew", pady=(10, 0))
+
+        ttk.Radiobutton(
+            pocket_frame,
+            text="Sealed",
+            variable=pocket_var,
+            value="sealed",
+        ).pack(side=tk.LEFT)
+
+        ttk.Radiobutton(
+            pocket_frame,
+            text="Open",
+            variable=pocket_var,
+            value="open",
+        ).pack(side=tk.LEFT, padx=(12, 0))
+
+        button_frame = ttk.Frame(frame)
+        button_frame.grid(row=3, column=0, columnspan=3, sticky="e", pady=(12, 0))
+
+        def save_and_close() -> None:
+            covers_folder = self.resolve_path(covers_var.get())
+
+            if not covers_folder.exists() or not covers_folder.is_dir():
+                messagebox.showerror(
+                    "Invalid Covers Folder",
+                    f"Covers folder does not exist:\n{covers_folder}",
+                    parent=dialog,
+                )
+                return
+
+            output_folder = self.resolve_path(output_folder_var.get())
+            output_folder.mkdir(parents=True, exist_ok=True)
+
+            self.covers_var.set(str(covers_folder))
+            self.output_folder_var.set(str(output_folder))
+            self.pocket_var.set(pocket_var.get())
+
+            self.save_settings()
+            self.refresh_albums()
+
+            dialog.destroy()
+
+        ttk.Button(button_frame, text="Cancel", command=dialog.destroy).pack(
+            side=tk.RIGHT
+        )
+        ttk.Button(button_frame, text="Save", command=save_and_close).pack(
+            side=tk.RIGHT, padx=(0, 8)
+        )
+
+        frame.columnconfigure(1, weight=1)
+
+        dialog.update_idletasks()
+        dialog.geometry(f"+{self.winfo_rootx() + 80}+{self.winfo_rooty() + 80}")
+
     def build_ui(self) -> None:
         main_frame = ttk.Frame(self, padding=12)
         main_frame.pack(fill=tk.BOTH, expand=True)
 
-        path_frame = ttk.LabelFrame(main_frame, text="Folders", padding=10)
-        path_frame.pack(fill=tk.X)
+        settings_bar = ttk.Frame(main_frame)
+        settings_bar.pack(fill=tk.X)
 
-        ttk.Label(path_frame, text="Covers folder:").grid(
-            row=0, column=0, sticky="w", padx=(0, 8), pady=4
-        )
-        ttk.Entry(path_frame, textvariable=self.covers_var).grid(
-            row=0, column=1, sticky="ew", pady=4
-        )
         ttk.Button(
-            path_frame,
-            text="Browse...",
-            command=self.browse_covers_folder,
-        ).grid(row=0, column=2, padx=(8, 0), pady=4)
+            settings_bar,
+            text="Settings...",
+            command=self.open_settings_dialog,
+        ).pack(side=tk.LEFT)
 
-        ttk.Label(path_frame, text="Output PDF:").grid(
-            row=1, column=0, sticky="w", padx=(0, 8), pady=4
-        )
-        ttk.Entry(path_frame, textvariable=self.output_var).grid(
-            row=1, column=1, sticky="ew", pady=4
-        )
-        ttk.Button(
-            path_frame,
-            text="Browse...",
-            command=self.browse_output_file,
-        ).grid(row=1, column=2, padx=(8, 0), pady=4)
-
-        path_frame.columnconfigure(1, weight=1)
-
-        options_frame = ttk.LabelFrame(main_frame, text="Options", padding=10)
-        options_frame.pack(fill=tk.X, pady=(10, 0))
-
-        ttk.Label(options_frame, text="Pocket style:").pack(side=tk.LEFT)
-
-        ttk.Radiobutton(
-            options_frame,
-            text="Sealed",
-            variable=self.pocket_var,
-            value="sealed",
-        ).pack(side=tk.LEFT, padx=(10, 0))
-
-        ttk.Radiobutton(
-            options_frame,
-            text="Open",
-            variable=self.pocket_var,
-            value="open",
-        ).pack(side=tk.LEFT, padx=(10, 0))
+        ttk.Label(
+            settings_bar,
+            textvariable=self.settings_summary_var,
+            anchor="w",
+        ).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(10, 0))
 
         download_frame = ttk.LabelFrame(
             main_frame,
@@ -357,28 +504,6 @@ class MiniLPSleeveGUI(tk.Tk):
 
         return self.project_root / path
 
-    def browse_covers_folder(self) -> None:
-        folder = filedialog.askdirectory(
-            title="Choose Covers folder",
-            initialdir=self.resolve_path(self.covers_var.get()),
-        )
-
-        if folder:
-            self.covers_var.set(folder)
-            self.refresh_albums()
-
-    def browse_output_file(self) -> None:
-        output_path = filedialog.asksaveasfilename(
-            title="Choose output PDF",
-            initialdir=self.resolve_path(self.output_var.get()).parent,
-            initialfile=self.resolve_path(self.output_var.get()).name,
-            defaultextension=".pdf",
-            filetypes=[("PDF files", "*.pdf"), ("All files", "*.*")],
-        )
-
-        if output_path:
-            self.output_var.set(output_path)
-
     def has_front_image(self, album_folder: Path) -> bool:
         return self.find_album_image(album_folder, "front") is not None
 
@@ -431,9 +556,9 @@ class MiniLPSleeveGUI(tk.Tk):
         return "good"
 
     def load_preview_image(
-            self,
-            image_path: Path,
-            max_size: tuple[int, int] = (PREVIEW_IMAGE_SIZE, PREVIEW_IMAGE_SIZE),
+        self,
+        image_path: Path,
+        max_size: tuple[int, int] = (PREVIEW_IMAGE_SIZE, PREVIEW_IMAGE_SIZE),
     ) -> tuple[ImageTk.PhotoImage, str]:
         """Load an image as a Tkinter thumbnail and return info text."""
         with Image.open(image_path) as image:
@@ -641,6 +766,13 @@ class MiniLPSleeveGUI(tk.Tk):
             f"Downloaded artwork for:\n{album_name}",
         )
 
+    def make_output_pdf_path(self) -> Path:
+        output_folder = self.resolve_path(self.output_folder_var.get())
+        output_folder.mkdir(parents=True, exist_ok=True)
+
+        timestamp = datetime.now().strftime("%Y-%m-%d_%H%M%S")
+        return output_folder / f"mini_lp_sleeves_{timestamp}.pdf"
+
     def generate_pdf(self) -> None:
         selected_albums = self.selected_album_names()
 
@@ -654,8 +786,7 @@ class MiniLPSleeveGUI(tk.Tk):
                 return
 
         covers_folder = self.resolve_path(self.covers_var.get())
-        output_path = self.resolve_path(self.output_var.get())
-        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path = self.make_output_pdf_path()
 
         command = [
             sys.executable,
@@ -689,29 +820,30 @@ class MiniLPSleeveGUI(tk.Tk):
             )
             self.status_var.set("PDF generation failed.")
             return
-
+        self.last_output_pdf = output_path
         self.status_var.set(f"Created PDF: {output_path}")
         messagebox.showinfo("PDF Created", f"Created PDF:\n{output_path}")
 
     def open_output_pdf(self) -> None:
-        output_path = self.resolve_path(self.output_var.get())
-
-        if not output_path.exists():
-            messagebox.showwarning("PDF Not Found", f"PDF not found:\n{output_path}")
-            return
-
-        os.startfile(output_path)
-
-    def open_output_folder(self) -> None:
-        output_folder = self.resolve_path(self.output_var.get()).parent
-
-        if not output_folder.exists():
+        if self.last_output_pdf is None:
             messagebox.showwarning(
-                "Folder Not Found",
-                f"Output folder not found:\n{output_folder}",
+                "No PDF Generated",
+                "No PDF has been generated in this session yet.",
             )
             return
 
+        if not self.last_output_pdf.exists():
+            messagebox.showwarning(
+                "PDF Not Found",
+                f"PDF not found:\n{self.last_output_pdf}",
+            )
+            return
+
+        os.startfile(self.last_output_pdf)
+
+    def open_output_folder(self) -> None:
+        output_folder = self.resolve_path(self.output_folder_var.get())
+        output_folder.mkdir(parents=True, exist_ok=True)
         os.startfile(output_folder)
 
 
