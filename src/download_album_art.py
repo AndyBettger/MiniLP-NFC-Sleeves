@@ -34,7 +34,7 @@ def download_url(url: str, timeout: int = 30) -> bytes:
         url,
         headers={
             "User-Agent": (
-                "MiniLP-NFC-Sleeves/0.1 " "(personal artwork downloader; Python urllib)"
+                "MiniLP-NFC-Sleeves/0.4 " "(personal artwork downloader; Python urllib)"
             )
         },
     )

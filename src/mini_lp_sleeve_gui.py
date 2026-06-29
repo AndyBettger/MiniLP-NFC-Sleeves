@@ -1,15 +1,16 @@
 from __future__ import annotations
-from PIL import Image, ImageTk, UnidentifiedImageError
 
+import json
 import os
 import subprocess
 import sys
 import tkinter as tk
+from datetime import datetime
 from pathlib import Path
 from tkinter import filedialog, messagebox
 from tkinter import ttk
-import json
-from datetime import datetime
+
+from PIL import Image, ImageTk, UnidentifiedImageError
 
 IMAGE_SUFFIXES = {
     ".jpg",
@@ -49,7 +50,6 @@ class MiniLPSleeveGUI(tk.Tk):
         self.geometry("1150x760")
         self.minsize(950, 600)
 
-        self.covers_var = tk.StringVar(value=str(self.project_root / "Covers"))
         self.settings_path = Path.home() / SETTINGS_FILENAME
 
         self.covers_var = tk.StringVar()

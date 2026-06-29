@@ -4,45 +4,50 @@ A Python tool for generating printable mini LP-style album sleeves designed to h
 
 This project was created as a companion to a Plexamp NFC setup. The idea is to make small physical album sleeves that can be tapped on an NFC reader to trigger playback in Plexamp.
 
-The current version generates A4 PDF sheets containing mini album sleeves that can be printed, cut, folded, and glued into small pockets.
+The app generates A4 PDF sheets containing mini album sleeves that can be printed, cut, folded, and glued into small pockets.
 
 ## Current Status
 
-Current milestone: **v0.2.0 - basic GUI and command-line workflow**.
+Current milestone: **v0.4.0 - GUI artwork previews and settings layout**.
 
-This is an early working prototype, but the physical layout has been printed and tested.
+This is still an early working prototype, but the physical layout has been printed and tested.
 
 Initial physical tests worked well on **160gsm card**. Plain printer paper is useful for test fitting but feels flimsy. Sealed sleeves are recommended for NFC cards because they hold the card more securely.
 
 Implemented:
 
-- A4 PDF output
-- 4 sleeves per A4 sheet
-- 60 mm × 60 mm finished sleeve faces
-- Open pocket mode
-- Sealed pocket mode
-- Trapezium glue flaps
-- Optional sealing flap for sealed sleeves
-- Cut and fold guide marks
-- 50 mm and 10 mm print calibration guides
-- Basic front/back image loading
-- Basic crop/fit handling
-- Optional conservative border trimming
-- Local image-folder workflow
-- Direct image URL downloader
-- Album listing from the command line
-- Single or multiple selected-album PDF generation
-- Basic Tkinter GUI for selecting albums and generating PDFs
+* A4 PDF output
+* 4 sleeves per A4 sheet
+* 60 mm × 60 mm finished sleeve faces
+* Open pocket mode
+* Sealed pocket mode
+* Trapezium glue flaps
+* Optional sealing flap for sealed sleeves
+* Cut and fold guide marks
+* 50 mm and 10 mm print calibration guides
+* Basic front/back image loading
+* Basic crop/fit handling
+* Optional conservative border trimming
+* Local image-folder workflow
+* Direct image URL downloader
+* Album listing from the command line
+* Single or multiple selected-album PDF generation
+* Basic Tkinter GUI
+* GUI settings dialog
+* GUI artwork URL downloading
+* GUI front/back artwork previews
+* GUI image dimensions and basic quality notes
+* Timestamped GUI PDF output filenames
 
 Not implemented yet:
 
-- MusicBrainz / Cover Art Archive search
-- CSV import
-- Manual crop/rotation preview
-- Front/back artwork preview in the GUI
-- GUI-based artwork downloading
-- Custom sleeve sizes
-- Automatic page packing
+* MusicBrainz / Cover Art Archive search
+* CSV import
+* Local artwork replacement from the GUI
+* Manual crop/rotation preview
+* Finished sleeve preview in the GUI
+* Custom sleeve sizes
+* Automatic page packing
 
 ## Intended Use and Artwork
 
@@ -112,6 +117,7 @@ MiniLP-NFC-Sleeves
 │   └── mini_lp_sleeve_gui.py
 ├── README.md
 ├── requirements.txt
+├── LICENSE
 └── .gitignore
 ```
 
@@ -142,7 +148,7 @@ The album folder name is used as the album label underneath the sleeve on the ge
 
 ## GUI Usage
 
-A basic Tkinter GUI is available:
+Run the GUI with:
 
 ```powershell
 python .\src\mini_lp_sleeve_gui.py
@@ -150,18 +156,43 @@ python .\src\mini_lp_sleeve_gui.py
 
 The GUI can:
 
-- list valid album folders
-- select one or more albums
-- choose open or sealed pocket mode
-- choose an output PDF path
-- generate the PDF using the command-line generator
-- open the output PDF or output folder
-- download front/back artwork from image URLs
-- refresh the album list after downloading artwork
+* list valid album folders
+* select one or more albums
+* preview front and back artwork
+* show image dimensions and basic quality notes
+* download front/back artwork from direct image URLs
+* refresh the album list after downloading artwork
+* generate PDFs using the command-line generator
+* open the output folder
+* open the most recently generated PDF
 
-The GUI is currently a simple wrapper around the command-line generator. Image preview and artwork download controls are planned future improvements.
+### GUI Settings
 
-The GUI can also download front/back artwork from direct image URLs into the selected `Covers` folder.
+The GUI has a **Settings** dialog for:
+
+* Covers folder
+* Output folder
+* Default pocket style
+
+The GUI stores settings in the user profile folder:
+
+```text
+.mini_lp_nfc_sleeves_settings.json
+```
+
+This settings file is not part of the Git repository.
+
+### GUI Output Files
+
+The GUI automatically creates timestamped PDF filenames in the configured output folder.
+
+Example:
+
+```text
+mini_lp_sleeves_2026-06-28_220530.pdf
+```
+
+This avoids accidental overwrites and keeps the main GUI screen simpler.
 
 ## Command-Line Usage
 
@@ -236,6 +267,8 @@ Covers/<Album Name>/Front.*
 Covers/<Album Name>/Back.*
 ```
 
+The same download functionality is also available in the GUI.
+
 ## PDF Generator Options
 
 ```text
@@ -275,7 +308,7 @@ Covers/<Album Name>/Back.*
 
 --guide-margin
     Extra white margin around each sleeve for external cut/fold guide marks.
-    Default: 5
+    Default: 3
 
 --front-mode
     How to square the front artwork.
@@ -335,8 +368,8 @@ Scale to Fit
 
 The PDF includes calibration marks:
 
-- 50 mm calibration line
-- 10 mm calibration square
+* 50 mm calibration line
+* 10 mm calibration square
 
 Measure these after printing to confirm the printer has not scaled the page.
 
@@ -351,12 +384,12 @@ Suggested first physical test:
 
 Physical testing so far:
 
-- ordinary printer paper works for test fitting but feels flimsy
-- 160gsm card feels and looks good for home testing
-- flap angles and flap sizes work well with double-sided tape
-- scoring is easy
-- sealed sleeves are more practical for NFC cards because they hold the card securely
-- open sleeves look more like real LP sleeves, but the card can fall out more easily
+* ordinary printer paper works for test fitting but feels flimsy
+* 160gsm card feels and looks good for home testing
+* flap angles and flap sizes work well with double-sided tape
+* scoring is easy
+* sealed sleeves are more practical for NFC cards because they hold the card securely
+* open sleeves look more like real LP sleeves, but the card can fall out more easily
 
 For final versions, a local print shop could print on approximately **200-220gsm silk/satin card**. Gloss or lamination should be tested carefully because folding may crack the finish.
 
@@ -364,12 +397,12 @@ For final versions, a local print shop could print on approximately **200-220gsm
 
 The current sleeve model is based on a standard LP-style sleeve:
 
-- back cover on the left
-- front cover on the right
-- fold between back and front covers
-- opening on the right-hand side of the front cover
-- top and bottom glue flaps attached to the back cover
-- optional sealing flap attached to the opening edge
+* back cover on the left
+* front cover on the right
+* fold between back and front covers
+* opening on the right-hand side of the front cover
+* top and bottom glue flaps attached to the back cover
+* optional sealing flap attached to the opening edge
 
 The whole sleeve is rotated on the A4 page to allow four sleeves per sheet.
 
@@ -414,7 +447,15 @@ v0.1.0
 v0.2.0
     Basic GUI added.
     Album selection added.
-    Direct artwork URL downloader added.
+
+v0.3.0
+    Direct artwork URL downloader added to the GUI.
+
+v0.4.0
+    GUI artwork previews added.
+    Image dimensions and quality notes added.
+    Settings dialog added.
+    Timestamped GUI output filenames added.
 ```
 
 ## Roadmap
@@ -423,36 +464,34 @@ Planned future features:
 
 ### GUI Improvements
 
-- Artwork download controls
-- Front/back artwork preview
-- Finished sleeve preview
-- Sleeve library
-- Print sheet builder
-- Front/back image adjustment panels
-- Crop/fill options
-- Manual trim controls
-- Fine rotation controls
+* Choose local replacement image for front/back artwork
+* Finished sleeve preview
+* Sleeve library
+* Print sheet builder
+* Front/back image adjustment panels
+* Crop/fill options
+* Manual trim controls
+* Fine rotation controls
 
 ### Artwork Sources
 
-- Search by artist and album
-- MusicBrainz release ID lookup
-- Cover Art Archive integration
-- Choose local replacement image
+* Search by artist and album
+* MusicBrainz release ID lookup
+* Cover Art Archive integration
 
 ### Batch Tools
 
-- CSV import
-- Batch approval workflow
-- Generate one sheet or multi-page batch PDF
-- Reprint selected sleeves
+* CSV import
+* Batch approval workflow
+* Generate one sheet or multi-page batch PDF
+* Reprint selected sleeves
 
 ### Layout Improvements
 
-- Custom sleeve size
-- Automatic A4 page packing
-- Alternative flap sizes
-- Print-shop friendly output mode
+* Custom sleeve size
+* Automatic A4 page packing
+* Alternative flap sizes
+* Print-shop friendly output mode
 
 ## Licence
 
